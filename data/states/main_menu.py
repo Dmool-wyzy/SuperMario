@@ -23,7 +23,7 @@ class Menu(tools._State):
     def startup(self, current_time, persist):
         """Called every time the game's state becomes this one.  Initializes
         certain values"""
-        self.next = c.LOAD_SCREEN
+        self.next = c.SAVE_MENU
         self.persist = persist
         self.game_info = persist
         self.overhead_info = info.OverheadInfo(self.game_info, c.MAIN_MENU)
@@ -114,6 +114,7 @@ class Menu(tools._State):
             for input in input_list:
                 if keys[input]:
                     self.reset_game_info()
+                    self.persist[c.PLAYER_MODE] = self.cursor.state
                     self.done = True
         elif self.cursor.state == c.PLAYER2:
             self.cursor.rect.y = 403

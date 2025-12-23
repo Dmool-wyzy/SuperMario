@@ -136,8 +136,13 @@ ONEUP = '379'
 PLAYER1 = '1 player'
 PLAYER2 = '2 player'
 
+PLAYER_MODE = 'player_mode'
+
 #OVERHEAD INFO STATES
 MAIN_MENU = 'main menu'
+
+SAVE_MENU = 'save_menu'
+
 LOAD_SCREEN = 'loading screen'
 LEVEL = 'level'
 GAME_OVER = 'game over'

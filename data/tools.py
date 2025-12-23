@@ -2,6 +2,8 @@ __author__ = 'justinarmstrong'
 
 import os
 import pygame as pg
+from .save_manager import SaveManager
+from .components.mario import Mario
 
 keybinding = {
     'action':pg.K_s,
