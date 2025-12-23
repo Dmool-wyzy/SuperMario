@@ -9,7 +9,7 @@ def main():
     """Add states to control here."""
     run_it = tools.Control(setup.ORIGINAL_CAPTION)
 
-    save_manager = tools.SaveManager(mode="single_player")  # 存档管理器
+    save_manager = tools.SaveManager()  # 存档管理器
     player = tools.Mario()  # 假设你的玩家类是 Mario
 
     state_dict = {

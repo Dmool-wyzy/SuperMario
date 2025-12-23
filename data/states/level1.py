@@ -20,6 +20,7 @@ from .. components import castle_flag
 class Level1(tools._State):
     def __init__(self):
         tools._State.__init__(self)
+        self.save_manager = tools.SaveManager()
 
     def startup(self, current_time, persist):
         """Called when the State object is created"""
@@ -372,6 +373,14 @@ class Level1(tools._State):
         elif self.state == c.FLAG_AND_FIREWORKS:
             self.update_flag_and_fireworks()
 
+        if keys[pg.K_ESCAPE]:  # 如果玩家按下 ESC 键
+            self.auto_save()  # 执行自动存档
+            self.quit_game()  # 退出游戏
+
+    def quit_game(self):
+        """Handles quitting the game"""
+        self.done = True
+        print("Exiting game...")
 
     def update_during_transition_state(self, keys):
         """Updates mario in a transition state (like becoming big, small,
@@ -434,6 +443,9 @@ class Level1(tools._State):
         if checkpoint:
             checkpoint.kill()
 
+            # 触发自动存档
+            self.auto_save()
+
             for i in range(1,11):
                 if checkpoint.name == str(i):
                     for index, enemy in enumerate(self.enemy_group_list[i -1]):
@@ -471,6 +483,18 @@ class Level1(tools._State):
 
             self.mario_and_enemy_group.add(self.enemy_group)
 
+    def auto_save(self):
+        """Auto-save the game progress"""
+        save_data = {
+            "lives": self.game_info[c.LIVES],
+            "score": self.game_info[c.SCORE],
+            "current_time": self.game_info[c.CURRENT_TIME],
+            "checkpoint": self.game_info[c.LEVEL_STATE]
+        }
+
+        slot = self.persist.get("save_slot", 1)  # 假设默认存档槽为 1
+        self.save_manager.save(slot, save_data)  # 执行存档
+        print("Game progress saved!")
 
     def create_flag_points(self):
         """Creates the points that appear when Mario touches the
