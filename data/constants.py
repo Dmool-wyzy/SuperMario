@@ -51,6 +51,7 @@ MAX_WALK_SPEED = 6
 
 #Mario States
 
+SPECIAL_STATE = 'special_state'
 STAND = 'standing'
 WALK = 'walk'
 JUMP = 'jump'

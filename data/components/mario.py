@@ -947,14 +947,20 @@ class Mario(pg.sprite.Sprite):
         self.in_transition_state = True
         self.x_vel = 0
         self.y_vel = 0
+        if self.fire:
+            right_frames = self.right_fire_frames
+        elif self.big:
+            right_frames = self.right_big_normal_frames
+        else:
+            right_frames = self.right_small_normal_frames
 
         if self.flag_pole_timer == 0:
             self.flag_pole_timer = self.current_time
         elif self.rect.bottom < 493:
             if (self.current_time - self.flag_pole_timer) < 65:
-                self.image = self.right_frames[9]
+                self.image = right_frames[9]
             elif (self.current_time - self.flag_pole_timer) < 130:
-                self.image = self.right_frames[10]
+                self.image = right_frames[10]
             elif (self.current_time - self.flag_pole_timer) >= 130:
                 self.flag_pole_timer = self.current_time
 
@@ -966,16 +972,22 @@ class Mario(pg.sprite.Sprite):
                 self.flag_pole_timer = self.current_time
 
         elif self.rect.bottom >= 493:
-            self.image = self.right_frames[10]
+            self.image = right_frames[10]
 
 
     def sitting_at_bottom_of_pole(self):
         """State when mario is at the bottom of the flag pole"""
+        if self.fire:
+            left_frames = self.left_fire_frames
+        elif self.big:
+            left_frames = self.left_big_normal_frames
+        else:
+            left_frames = self.left_small_normal_frames
         if self.flag_pole_timer == 0:
             self.flag_pole_timer = self.current_time
-            self.image = self.left_frames[10]
+            self.image = left_frames[10]
         elif (self.current_time - self.flag_pole_timer) < 210:
-            self.image = self.left_frames[10]
+            self.image = left_frames[10]
         else:
             self.in_transition_state = False
             if self.rect.bottom < 485:
@@ -986,7 +998,13 @@ class Mario(pg.sprite.Sprite):
 
     def set_state_to_bottom_of_pole(self):
         """Sets Mario to the BOTTOM_OF_POLE state"""
-        self.image = self.left_frames[9]
+        if self.fire:
+            left_frames = self.left_fire_frames
+        elif self.big:
+            left_frames = self.left_big_normal_frames
+        else:
+            left_frames = self.left_small_normal_frames
+        self.image = left_frames[9]
         right = self.rect.right
         #self.rect.bottom = 493
         self.rect.x = right

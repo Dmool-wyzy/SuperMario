@@ -1,6 +1,7 @@
 __author__ = 'justinarmstrong'
 
 import os
+import time
 import pygame as pg
 from .save_manager import SaveManager
 from .components.mario import Mario
@@ -29,6 +30,7 @@ class Control(object):
         self.state_dict = {}
         self.state_name = None
         self.state = None
+        self.pending_screenshot = False
 
     def setup_states(self, state_dict, start_state):
         self.state_dict = state_dict
@@ -37,11 +39,15 @@ class Control(object):
 
     def update(self):
         self.current_time = pg.time.get_ticks()
+        self.keys = pg.key.get_pressed()
         if self.state.quit:
             self.done = True
         elif self.state.done:
             self.flip_state()
         self.state.update(self.screen, self.keys, self.current_time)
+        if self.pending_screenshot:
+            self.pending_screenshot = False
+            self.save_screenshot()
 
     def flip_state(self):
         previous, self.state_name = self.state_name, self.state.next
@@ -58,6 +64,12 @@ class Control(object):
             elif event.type == pg.KEYDOWN:
                 self.keys = pg.key.get_pressed()
                 self.toggle_show_fps(event.key)
+                if event.key == pg.K_F12:
+                    self.pending_screenshot = True
+                else:
+                    handle_hotkey = getattr(self.state, "handle_hotkey", None)
+                    if callable(handle_hotkey):
+                        handle_hotkey(event.key)
             elif event.type == pg.KEYUP:
                 self.keys = pg.key.get_pressed()
             self.state.get_event(event)
@@ -68,6 +80,23 @@ class Control(object):
             self.show_fps = not self.show_fps
             if not self.show_fps:
                 pg.display.set_caption(self.caption)
+
+    def save_screenshot(self):
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        out_dir = os.path.join(root_dir, "screenshots")
+        try:
+            os.makedirs(out_dir, exist_ok=True)
+        except OSError:
+            return None, "无法创建 screenshots 文件夹"
+
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        filename = f"screenshot_{timestamp}_{pg.time.get_ticks()}.png"
+        path = os.path.join(out_dir, filename)
+        try:
+            pg.image.save(self.screen, path)
+        except Exception:
+            return None, "写入文件失败"
+        return path, None
 
 
     def main(self):
@@ -95,6 +124,9 @@ class _State(object):
 
     def get_event(self, event):
         pass
+
+    def handle_hotkey(self, key):
+        return None
 
     def startup(self, current_time, persistant):
         self.persist = persistant
@@ -144,7 +176,6 @@ def load_all_sfx(directory, accept=('.wav','.mpe','.ogg','.mdi')):
         if ext.lower() in accept:
             effects[name] = pg.mixer.Sound(os.path.join(directory, fx))
     return effects
-
 
 
 

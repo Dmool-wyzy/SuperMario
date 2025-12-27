@@ -23,14 +23,31 @@ class Level1(tools._State):
         self.save_manager = tools.SaveManager()
 
     def startup(self, current_time, persist):
-        """Called when the State object is created"""
         self.game_info = persist
         self.persist = self.game_info
+        self.game_info.setdefault(c.COIN_TOTAL, 0)
+        self.game_info.setdefault(c.SCORE, 0)
+        self.game_info.setdefault(c.LIVES, 3)
+        self.game_info.setdefault(c.TOP_SCORE, 0)
+        self.game_info.setdefault(c.CAMERA_START_X, 0)
+        self.game_info.setdefault(c.MARIO_DEAD, False)
         self.game_info[c.CURRENT_TIME] = current_time
-        self.game_info[c.LEVEL_STATE] = c.NOT_FROZEN
-        self.game_info[c.MARIO_DEAD] = False
+        self.current_time = current_time
+
+        save_data = self.persist.get("save_data")
+        if isinstance(save_data, dict):
+            progress = save_data.get("progress", {})
+            viewport_x = progress.get("viewport_x", None) if isinstance(progress, dict) else None
+            if isinstance(viewport_x, (int, float)):
+                self.game_info[c.CAMERA_START_X] = int(viewport_x)
+
+            flags = save_data.get("flags", {})
+            if isinstance(flags, dict):
+                self.persist["cheat_invincible"] = bool(flags.get("cheat_invincible", False))
+        self.persist.setdefault("cheat_invincible", False)
 
         self.state = c.NOT_FROZEN
+        self.game_info[c.LEVEL_STATE] = self.state
         self.death_timer = 0
         self.flag_timer = 0
         self.flag_score = None
@@ -51,6 +68,30 @@ class Level1(tools._State):
         self.setup_mario()
         self.setup_checkpoints()
         self.setup_spritegroups()
+        self.apply_loaded_save(self.persist.get("save_data"))
+        self.sync_cheat_invincible()
+
+    def handle_hotkey(self, key):
+        if key == pg.K_F6:
+            self.manual_save()
+        if key == pg.K_F9:
+            self.request_load()
+        if key == pg.K_F1:
+            self.persist["cheat_invincible"] = not bool(self.persist.get("cheat_invincible", False))
+            self.sync_cheat_invincible()
+        return None
+
+    def sync_cheat_invincible(self):
+        active = bool(self.persist.get("cheat_invincible", False))
+        if active:
+            self.mario._cheat_invincible_forced = True
+            self.mario.invincible = True
+            self.mario.losing_invincibility = False
+            self.mario.invincible_start_timer = self.current_time
+        else:
+            if getattr(self.mario, "_cheat_invincible_forced", False):
+                self.mario._cheat_invincible_forced = False
+                self.mario.invincible = False
 
 
     def setup_background(self):
@@ -373,20 +414,12 @@ class Level1(tools._State):
         elif self.state == c.FLAG_AND_FIREWORKS:
             self.update_flag_and_fireworks()
 
-        if keys[pg.K_ESCAPE]:  # 如果玩家按下 ESC 键
-            self.auto_save()  # 执行自动存档
-            self.quit_game()  # 退出游戏
-
-    def quit_game(self):
-        """Handles quitting the game"""
-        self.done = True
-        print("Exiting game...")
-
     def update_during_transition_state(self, keys):
         """Updates mario in a transition state (like becoming big, small,
          or dies). Checks if he leaves the transition state or dies to
          change the level state back"""
         self.mario.update(keys, self.game_info, self.powerup_group)
+        self.sync_cheat_invincible()
         for score in self.moving_score_list:
             score.update(self.moving_score_list, self.game_info)
         if self.flag_score:
@@ -413,6 +446,7 @@ class Level1(tools._State):
     def update_all_sprites(self, keys):
         """Updates the location of all sprites on the screen."""
         self.mario.update(keys, self.game_info, self.powerup_group)
+        self.sync_cheat_invincible()
         for score in self.moving_score_list:
             score.update(self.moving_score_list, self.game_info)
         if self.flag_score:
@@ -442,9 +476,7 @@ class Level1(tools._State):
                                                  self.check_point_group)
         if checkpoint:
             checkpoint.kill()
-
-            # 触发自动存档
-            self.auto_save()
+            self.save_progress(checkpoint)
 
             for i in range(1,11):
                 if checkpoint.name == str(i):
@@ -464,7 +496,7 @@ class Level1(tools._State):
             elif checkpoint.name == '12':
                 self.state = c.IN_CASTLE
                 self.mario.kill()
-                self.mario.state == c.STAND
+                self.mario.state = c.STAND
                 self.mario.in_castle = True
                 self.overhead_info_display.state = c.FAST_COUNT_DOWN
 
@@ -483,18 +515,192 @@ class Level1(tools._State):
 
             self.mario_and_enemy_group.add(self.enemy_group)
 
-    def auto_save(self):
-        """Auto-save the game progress"""
-        save_data = {
-            "lives": self.game_info[c.LIVES],
-            "score": self.game_info[c.SCORE],
-            "current_time": self.game_info[c.CURRENT_TIME],
-            "checkpoint": self.game_info[c.LEVEL_STATE]
-        }
+    def save_progress(self, checkpoint_sprite=None):
+        slot = self.persist.get("save_slot", 0)
+        checkpoint_name = None
+        if checkpoint_sprite is not None:
+            checkpoint_name = getattr(checkpoint_sprite, "name", None)
+        if checkpoint_name in ("11", "12"):
+            checkpoint_name = "10"
+        data = self.build_save_payload(checkpoint_name=checkpoint_name)
+        self.persist["save_data"] = data
+        self.save_manager.save(slot, data)
 
-        slot = self.persist.get("save_slot", 1)  # 假设默认存档槽为 1
-        self.save_manager.save(slot, save_data)  # 执行存档
-        print("Game progress saved!")
+    def build_save_payload(self, checkpoint_name=None):
+        slot = self.persist.get("save_slot", 0)
+        existing = self.persist.get("save_data") if isinstance(self.persist.get("save_data"), dict) else None
+        data = self.save_manager.normalize(existing or {}, slot) or self.save_manager.create_new(slot)
+
+        player = data.setdefault("player", {})
+        player["lives"] = int(self.game_info.get(c.LIVES, 3))
+        player["score"] = int(self.game_info.get(c.SCORE, 0))
+        player["coin_total"] = int(self.game_info.get(c.COIN_TOTAL, 0))
+        player["top_score"] = int(self.game_info.get(c.TOP_SCORE, 0))
+        player["big"] = bool(getattr(self.mario, "big", False))
+        player["fire"] = bool(getattr(self.mario, "fire", False))
+
+        progress = data.setdefault("progress", {})
+        progress["level"] = 1
+        if checkpoint_name is not None:
+            progress["checkpoint"] = checkpoint_name
+        progress["mario_x"] = int(self.mario.rect.x)
+        progress["mario_y"] = int(self.mario.rect.y)
+        progress["viewport_x"] = int(self.viewport.x)
+
+        flags = data.setdefault("flags", {})
+        flags["cheat_invincible"] = bool(self.persist.get("cheat_invincible", False))
+
+        return data
+
+    def manual_save(self):
+        slot = self.persist.get("save_slot", 0)
+        data = self.build_save_payload(checkpoint_name=None)
+        err = self.save_manager.save_with_error(slot, data)
+        if err:
+            return f"手动存档失败：{err}"
+        self.persist["save_data"] = data
+        return f"手动存档成功：SLOT {int(slot) + 1}"
+
+    def request_load(self):
+        slot = self.persist.get("save_slot", 0)
+        data, err = self.save_manager.load_with_error(slot)
+        if err:
+            return f"读档失败：{err}"
+        if data is None:
+            return "读档失败：该槽位为空"
+
+        player = data.get("player", {})
+        self.persist["save_data"] = data
+        self.persist[c.LIVES] = player.get("lives", 3)
+        self.persist[c.SCORE] = player.get("score", 0)
+        self.persist[c.COIN_TOTAL] = player.get("coin_total", 0)
+        self.persist[c.TOP_SCORE] = player.get("top_score", 0)
+        flags = data.get("flags", {})
+        if isinstance(flags, dict):
+            self.persist["cheat_invincible"] = bool(flags.get("cheat_invincible", False))
+        self.next = c.LOAD_SCREEN
+        self.done = True
+        return f"读档成功：SLOT {int(slot) + 1}"
+
+    def apply_loaded_save(self, save_data):
+        if not isinstance(save_data, dict):
+            return
+
+        save_data = self.save_manager.normalize(save_data, self.persist.get("save_slot", 0))
+        if not isinstance(save_data, dict):
+            return
+        self.persist["save_data"] = save_data
+
+        player = save_data.get("player", {})
+        if isinstance(player, dict):
+            self.game_info[c.LIVES] = int(player.get("lives", self.game_info.get(c.LIVES, 3)))
+            self.game_info[c.SCORE] = int(player.get("score", self.game_info.get(c.SCORE, 0)))
+            self.game_info[c.COIN_TOTAL] = int(player.get("coin_total", self.game_info.get(c.COIN_TOTAL, 0)))
+            self.game_info[c.TOP_SCORE] = int(player.get("top_score", self.game_info.get(c.TOP_SCORE, 0)))
+            self.apply_mario_power_state(bool(player.get("big", False)), bool(player.get("fire", False)))
+
+
+        progress = save_data.get("progress", {})
+        if isinstance(progress, dict):
+            checkpoint_name = progress.get("checkpoint", None)
+            mario_x = progress.get("mario_x", None)
+            mario_y = progress.get("mario_y", None)
+            viewport_x = progress.get("viewport_x", None)
+
+            end_checkpoint = False
+            try:
+                checkpoint_int = int(checkpoint_name) if checkpoint_name is not None else None
+            except (TypeError, ValueError):
+                checkpoint_int = None
+            if checkpoint_int is not None and checkpoint_int >= 11:
+                end_checkpoint = True
+            if isinstance(mario_x, (int, float)) and mario_x >= 8500:
+                end_checkpoint = True
+            if isinstance(viewport_x, (int, float)) and viewport_x >= 8400:
+                end_checkpoint = True
+
+            if end_checkpoint:
+                safe_checkpoint = "10"
+                spawn_x = 6800
+                spawn_y = int(c.GROUND_HEIGHT - self.mario.rect.height)
+                mario_x = spawn_x
+                mario_y = spawn_y
+                viewport_x = spawn_x - self.viewport.w // 3
+                progress["checkpoint"] = safe_checkpoint
+                progress["mario_x"] = spawn_x
+                progress["mario_y"] = spawn_y
+                progress["viewport_x"] = viewport_x
+                self.game_info[c.CAMERA_START_X] = viewport_x
+
+            if isinstance(mario_x, (int, float)):
+                self.mario.rect.x = int(mario_x)
+            if isinstance(mario_y, (int, float)):
+                self.mario.rect.y = int(mario_y)
+            if self.mario.rect.bottom > c.GROUND_HEIGHT:
+                self.mario.rect.bottom = c.GROUND_HEIGHT
+
+            if isinstance(viewport_x, (int, float)):
+                highest = self.level_rect.w - self.viewport.w
+                self.viewport.x = max(0, min(int(viewport_x), highest))
+            else:
+                highest = self.level_rect.w - self.viewport.w
+                target = self.mario.rect.centerx - self.viewport.w // 3
+                self.viewport.x = max(0, min(int(target), highest))
+
+            self.apply_checkpoint_state(progress.get("checkpoint", None))
+
+            if end_checkpoint:
+                slot = self.persist.get("save_slot", None)
+                if isinstance(slot, int):
+                    self.save_manager.save(slot, save_data)
+
+        flags = save_data.get("flags", {})
+        if isinstance(flags, dict):
+            self.persist["cheat_invincible"] = bool(flags.get("cheat_invincible", self.persist.get("cheat_invincible", False)))
+
+    def apply_mario_power_state(self, big, fire):
+        bottom = self.mario.rect.bottom
+        x = self.mario.rect.x
+        self.mario.big = bool(big) or bool(fire)
+        self.mario.fire = bool(fire)
+        if self.mario.fire:
+            self.mario.right_frames = self.mario.right_fire_frames
+            self.mario.left_frames = self.mario.left_fire_frames
+        elif self.mario.big:
+            self.mario.right_frames = self.mario.right_big_normal_frames
+            self.mario.left_frames = self.mario.left_big_normal_frames
+        else:
+            self.mario.right_frames = self.mario.right_small_normal_frames
+            self.mario.left_frames = self.mario.left_small_normal_frames
+        self.mario.frame_index = 0
+        self.mario.image = self.mario.right_frames[self.mario.frame_index] if self.mario.facing_right else self.mario.left_frames[self.mario.frame_index]
+        self.mario.rect = self.mario.image.get_rect()
+        self.mario.rect.bottom = bottom
+        self.mario.rect.x = x
+
+    def apply_checkpoint_state(self, checkpoint_name):
+        if not checkpoint_name:
+            return
+        try:
+            index = int(checkpoint_name)
+        except (TypeError, ValueError):
+            return
+        if not (1 <= index <= 10):
+            return
+
+        for cp in list(self.check_point_group):
+            try:
+                cp_index = int(getattr(cp, "name", ""))
+            except (TypeError, ValueError):
+                continue
+            if 1 <= cp_index <= index:
+                cp.kill()
+
+        for i in range(1, index + 1):
+            for enemy_index, enemy in enumerate(self.enemy_group_list[i - 1]):
+                enemy.rect.x = self.viewport.right + (enemy_index * 60)
+            self.enemy_group.add(self.enemy_group_list[i - 1])
+        self.mario_and_enemy_group.add(self.enemy_group)
 
     def create_flag_points(self):
         """Creates the points that appear when Mario touches the
@@ -562,7 +768,7 @@ class Level1(tools._State):
             self.adjust_mario_for_x_collisions(collider)
 
         elif enemy:
-            if self.mario.invincible:
+            if self.mario.invincible or self.persist.get("cheat_invincible", False):
                 setup.SFX['kick'].play()
                 self.game_info[c.SCORE] += 100
                 self.moving_score_list.append(
@@ -688,9 +894,10 @@ class Level1(tools._State):
             shell.state = c.SHELL_SLIDE
 
         elif shell.state == c.SHELL_SLIDE:
-            if self.mario.big and not self.mario.invincible:
+            invincible = self.mario.invincible or self.persist.get("cheat_invincible", False)
+            if self.mario.big and not invincible:
                 self.mario.state = c.BIG_TO_SMALL
-            elif self.mario.invincible:
+            elif invincible:
                 self.game_info[c.SCORE] += 200
                 self.moving_score_list.append(
                     score.Score(shell.rect.right - self.viewport.x,
@@ -699,7 +906,7 @@ class Level1(tools._State):
                 self.sprites_about_to_die_group.add(shell)
                 shell.start_death_jump(c.RIGHT)
             else:
-                if not self.mario.hurt_invincible and not self.mario.invincible:
+                if not self.mario.hurt_invincible and not invincible:
                     self.state = c.FROZEN
                     self.mario.start_death_jump(self.game_info)
 
@@ -725,7 +932,7 @@ class Level1(tools._State):
             self.adjust_mario_for_y_ground_pipe_collisions(ground_step_or_pipe)
 
         elif enemy:
-            if self.mario.invincible:
+            if self.mario.invincible or self.persist.get("cheat_invincible", False):
                 setup.SFX['kick'].play()
                 enemy.kill()
                 self.sprites_about_to_die_group.add(enemy)
@@ -1449,10 +1656,21 @@ class Level1(tools._State):
         self.brick_pieces_group.draw(self.level)
         self.flag_pole_group.draw(self.level)
         self.mario_and_enemy_group.draw(self.level)
+        if self.persist.get("cheat_invincible", False):
+            self.draw_cheat_invincible_overlay()
 
         surface.blit(self.level, (0,0), self.viewport)
         self.overhead_info_display.draw(surface)
         for score in self.moving_score_list:
             score.draw(surface)
+
+    def draw_cheat_invincible_overlay(self):
+        center = self.mario.rect.center
+        radius = max(self.mario.rect.w, self.mario.rect.h) // 2 + 6
+        size = radius * 2 + 2
+        overlay = pg.Surface((size, size), pg.SRCALPHA)
+        pg.draw.circle(overlay, (255, 215, 0, 180), (size // 2, size // 2), radius, 3)
+        pg.draw.circle(overlay, (255, 255, 255, 90), (size // 2, size // 2), radius - 6, 2)
+        self.level.blit(overlay, (center[0] - size // 2, center[1] - size // 2))
 
 
