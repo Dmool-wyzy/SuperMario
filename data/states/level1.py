@@ -619,14 +619,24 @@ class Level1(tools._State):
             return "读档失败：该槽位为空"
 
         player = data.get("player", {})
+        try:
+            lives = int(player.get("lives", 3)) if isinstance(player, dict) else 3
+        except (TypeError, ValueError):
+            lives = 3
+        if lives <= 0:
+            data = self.save_manager.reset_run(data, slot) or self.save_manager.create_new(slot)
+            self.save_manager.save(slot, data)
+            player = data.get("player", {})
+
         self.persist["save_data"] = data
-        self.persist[c.LIVES] = player.get("lives", 3)
-        self.persist[c.SCORE] = player.get("score", 0)
-        self.persist[c.COIN_TOTAL] = player.get("coin_total", 0)
-        self.persist[c.TOP_SCORE] = player.get("top_score", 0)
+        self.persist[c.LIVES] = int(player.get("lives", 3)) if isinstance(player, dict) else 3
+        self.persist[c.SCORE] = int(player.get("score", 0)) if isinstance(player, dict) else 0
+        self.persist[c.COIN_TOTAL] = int(player.get("coin_total", 0)) if isinstance(player, dict) else 0
+        self.persist[c.TOP_SCORE] = int(player.get("top_score", 0)) if isinstance(player, dict) else 0
         flags = data.get("flags", {})
         if isinstance(flags, dict):
             self.persist["cheat_invincible"] = bool(flags.get("cheat_invincible", False))
+        self.game_info[c.CAMERA_START_X] = 0
         self.next = c.LOAD_SCREEN
         self.done = True
         return f"读档成功：SLOT {int(slot) + 1}"
@@ -642,7 +652,26 @@ class Level1(tools._State):
 
         player = save_data.get("player", {})
         if isinstance(player, dict):
-            self.game_info[c.LIVES] = int(player.get("lives", self.game_info.get(c.LIVES, 3)))
+            try:
+                lives = int(player.get("lives", self.game_info.get(c.LIVES, 3)))
+            except (TypeError, ValueError):
+                lives = int(self.game_info.get(c.LIVES, 3))
+            if lives <= 0:
+                slot = self.persist.get("save_slot", None)
+                reset = self.save_manager.reset_run(save_data, slot) if isinstance(slot, int) else None
+                if isinstance(reset, dict):
+                    save_data = reset
+                    self.persist["save_data"] = save_data
+                    player = save_data.get("player", {})
+                    lives = int(player.get("lives", 3)) if isinstance(player, dict) else 3
+                    if isinstance(slot, int):
+                        self.save_manager.save(slot, save_data)
+                else:
+                    lives = 3
+                    player["lives"] = lives
+                    if isinstance(slot, int):
+                        self.save_manager.save(slot, save_data)
+            self.game_info[c.LIVES] = lives
             self.game_info[c.SCORE] = int(player.get("score", self.game_info.get(c.SCORE, 0)))
             self.game_info[c.COIN_TOTAL] = int(player.get("coin_total", self.game_info.get(c.COIN_TOTAL, 0)))
             self.game_info[c.TOP_SCORE] = int(player.get("top_score", self.game_info.get(c.TOP_SCORE, 0)))
@@ -1733,10 +1762,14 @@ class Level1(tools._State):
         if self.game_info[c.SCORE] > self.persist[c.TOP_SCORE]:
             self.persist[c.TOP_SCORE] = self.game_info[c.SCORE]
         if self.mario.dead:
-            self.persist[c.LIVES] -= 1
+            try:
+                current_lives = int(self.persist.get(c.LIVES, 0))
+            except (TypeError, ValueError):
+                current_lives = 0
+            self.persist[c.LIVES] = max(0, current_lives - 1)
             self.save_player_state()
 
-        if self.persist[c.LIVES] == 0:
+        if self.persist[c.LIVES] <= 0:
             self.next = c.GAME_OVER
             self.game_info[c.CAMERA_START_X] = 0
         elif self.mario.dead == False:

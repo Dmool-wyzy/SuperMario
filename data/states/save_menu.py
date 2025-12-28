@@ -63,14 +63,24 @@ class SaveMenu(tools._State):
             data = self.save_manager.create_new(slot)
 
         player = data.get("player", {})
+        try:
+            lives = int(player.get("lives", 3))
+        except (TypeError, ValueError):
+            lives = 3
+        if lives <= 0:
+            data = self.save_manager.reset_run(data, slot) or self.save_manager.create_new(slot)
+            self.save_manager.save(slot, data)
+            player = data.get("player", {})
+
         self.persist["save_slot"] = slot
         self.persist["save_data"] = data
-        self.persist[c.LIVES] = player.get("lives", 3)
-        self.persist[c.SCORE] = player.get("score", 0)
-        self.persist[c.COIN_TOTAL] = player.get("coin_total", 0)
-        self.persist[c.TOP_SCORE] = player.get("top_score", 0)
+        self.persist[c.LIVES] = int(player.get("lives", 3)) if isinstance(player, dict) else 3
+        self.persist[c.SCORE] = int(player.get("score", 0)) if isinstance(player, dict) else 0
+        self.persist[c.COIN_TOTAL] = int(player.get("coin_total", 0)) if isinstance(player, dict) else 0
+        self.persist[c.TOP_SCORE] = int(player.get("top_score", 0)) if isinstance(player, dict) else 0
         self.persist[c.LEVEL_STATE] = c.NOT_FROZEN
         self.persist[c.MARIO_DEAD] = False
+        self.persist[c.CAMERA_START_X] = 0
 
         self.done = True
 

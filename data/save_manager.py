@@ -15,6 +15,39 @@ class SaveManager:
         self.save_dir = os.path.abspath(save_dir)
         os.makedirs(self.save_dir, exist_ok=True)
 
+    def reset_run(self, existing, slot):
+        slot_int = self.validate_slot(slot)
+        if slot_int is None:
+            slot_int = 0
+
+        base = self.create_new(slot_int)
+        if base is None:
+            return None
+
+        normalized = self.normalize(existing, slot_int) if isinstance(existing, dict) else None
+        if not isinstance(normalized, dict):
+            return base
+
+        if isinstance(normalized.get("records"), dict):
+            base["records"] = normalized.get("records")
+
+        prev_player = normalized.get("player", {})
+        if isinstance(prev_player, dict):
+            try:
+                prev_top = int(prev_player.get("top_score", 0))
+            except (TypeError, ValueError):
+                prev_top = 0
+            try:
+                prev_score = int(prev_player.get("score", 0))
+            except (TypeError, ValueError):
+                prev_score = 0
+
+            base_player = base.get("player", {})
+            if isinstance(base_player, dict):
+                base_player["top_score"] = max(prev_top, prev_score, int(base_player.get("top_score", 0) or 0))
+
+        return base
+
     def validate_slot(self, slot):
         try:
             slot_int = int(slot)
