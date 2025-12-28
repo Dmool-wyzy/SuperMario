@@ -1,23 +1,35 @@
 {
   "version": 2,
   "slot": 0,
-  "updated_at_ms": 1766819803141,
   "player": {
     "lives": 3,
-    "score": 5400,
+    "score": 1300,
     "coin_total": 1,
-    "top_score": 0,
-    "big": false,
+    "top_score": 6000,
+    "big": true,
     "fire": false
   },
   "progress": {
     "level": 1,
-    "checkpoint": "10",
-    "mario_x": 8746,
-    "mario_y": 498,
-    "viewport_x": 8287
+    "checkpoint": "4",
+    "mario_x": 3045,
+    "mario_y": 328,
+    "viewport_x": 2689
   },
   "flags": {
     "cheat_invincible": true
+  },
+  "updated_at_ms": 1766858769239,
+  "records": {
+    "level1": {
+      "clears": 2,
+      "last_clear": {
+        "timestamp_ms": 1766844083459,
+        "score": 5000,
+        "coin_total": 10,
+        "lives": 3
+      },
+      "last_clear_updated_at_ms": 1766844083425
+    }
   }
 }

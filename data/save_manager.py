@@ -58,6 +58,7 @@ class SaveManager:
                 "mario_y": None,
                 "viewport_x": 0,
             },
+            "records": {},
             "flags": {
                 "cheat_invincible": False,
             },
@@ -67,6 +68,22 @@ class SaveManager:
         if not isinstance(raw, dict):
             return None
 
+        def coerce_bool(value, default=False):
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return bool(default)
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                v = value.strip().lower()
+                if v in ("1", "true", "t", "yes", "y", "on"):
+                    return True
+                if v in ("0", "false", "f", "no", "n", "off", ""):
+                    return False
+                return bool(default)
+            return bool(value)
+
         if raw.get("version") == SAVE_VERSION and isinstance(raw.get("player"), dict):
             slot_int = self.validate_slot(raw.get("slot", slot))
             if slot_int is None:
@@ -75,6 +92,7 @@ class SaveManager:
                 raw["slot"] = slot_int
             raw.setdefault("updated_at_ms", int(time.time() * 1000))
             raw.setdefault("progress", {})
+            raw.setdefault("records", {})
             raw.setdefault("flags", {})
             player = raw.setdefault("player", {})
             player.setdefault("lives", 3)
@@ -83,7 +101,12 @@ class SaveManager:
             player.setdefault("top_score", 0)
             player.setdefault("big", False)
             player.setdefault("fire", False)
+            player["big"] = coerce_bool(player.get("big", False), default=False)
+            player["fire"] = coerce_bool(player.get("fire", False), default=False)
+            if not isinstance(raw.get("records"), dict):
+                raw["records"] = {}
             raw["flags"].setdefault("cheat_invincible", False)
+            raw["flags"]["cheat_invincible"] = coerce_bool(raw["flags"].get("cheat_invincible", False), default=False)
             raw["progress"].setdefault("level", 1)
             raw["progress"].setdefault("checkpoint", None)
             raw["progress"].setdefault("mario_x", None)
@@ -101,8 +124,8 @@ class SaveManager:
         base_player["score"] = int(raw.get("score", base_player["score"]) or base_player["score"])
         base_player["coin_total"] = int(raw.get("coin_total", base_player["coin_total"]) or base_player["coin_total"])
         base_player["top_score"] = int(raw.get("top_score", base_player["top_score"]) or base_player["top_score"])
-        base_player["big"] = bool(raw.get("big", base_player["big"]))
-        base_player["fire"] = bool(raw.get("fire", base_player["fire"]))
+        base_player["big"] = coerce_bool(raw.get("big", base_player["big"]), default=base_player["big"])
+        base_player["fire"] = coerce_bool(raw.get("fire", base_player["fire"]), default=base_player["fire"])
 
         progress = base["progress"]
         progress["level"] = int(raw.get("level", progress["level"]) or progress["level"])
@@ -112,7 +135,10 @@ class SaveManager:
         progress["viewport_x"] = raw.get("viewport_x", progress["viewport_x"])
 
         flags = base["flags"]
-        flags["cheat_invincible"] = bool(raw.get("cheat_invincible", flags["cheat_invincible"]))
+        flags["cheat_invincible"] = coerce_bool(raw.get("cheat_invincible", flags["cheat_invincible"]), default=flags["cheat_invincible"])
+
+        if isinstance(raw.get("records"), dict):
+            base["records"] = raw.get("records")
 
         return base
 

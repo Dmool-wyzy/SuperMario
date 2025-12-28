@@ -2,6 +2,7 @@ from __future__ import division
 
 
 import pygame as pg
+import time
 from .. import setup, tools
 from .. import constants as c
 from .. import game_sound
@@ -21,6 +22,7 @@ class Level1(tools._State):
     def __init__(self):
         tools._State.__init__(self)
         self.save_manager = tools.SaveManager()
+        self.clear_saved = False
 
     def startup(self, current_time, persist):
         self.game_info = persist
@@ -52,6 +54,7 @@ class Level1(tools._State):
         self.flag_timer = 0
         self.flag_score = None
         self.flag_score_total = 0
+        self.clear_saved = False
 
         self.moving_score_list = []
         self.overhead_info_display = info.OverheadInfo(self.game_info, c.LEVEL)
@@ -476,7 +479,11 @@ class Level1(tools._State):
                                                  self.check_point_group)
         if checkpoint:
             checkpoint.kill()
-            self.save_progress(checkpoint)
+            if getattr(checkpoint, "name", None) == "12":
+                self.record_level_clear_and_reset_save()
+                self.clear_saved = True
+            else:
+                self.save_progress(checkpoint)
 
             for i in range(1,11):
                 if checkpoint.name == str(i):
@@ -620,17 +627,18 @@ class Level1(tools._State):
                 end_checkpoint = True
 
             if end_checkpoint:
-                safe_checkpoint = "10"
-                spawn_x = 6800
+                self.migrate_end_checkpoint_to_clear_record(save_data)
+
+                spawn_x = 110
                 spawn_y = int(c.GROUND_HEIGHT - self.mario.rect.height)
                 mario_x = spawn_x
                 mario_y = spawn_y
-                viewport_x = spawn_x - self.viewport.w // 3
-                progress["checkpoint"] = safe_checkpoint
+                viewport_x = 0
+                progress["checkpoint"] = None
                 progress["mario_x"] = spawn_x
                 progress["mario_y"] = spawn_y
-                progress["viewport_x"] = viewport_x
-                self.game_info[c.CAMERA_START_X] = viewport_x
+                progress["viewport_x"] = 0
+                self.game_info[c.CAMERA_START_X] = 0
 
             if isinstance(mario_x, (int, float)):
                 self.mario.rect.x = int(mario_x)
@@ -657,6 +665,118 @@ class Level1(tools._State):
         flags = save_data.get("flags", {})
         if isinstance(flags, dict):
             self.persist["cheat_invincible"] = bool(flags.get("cheat_invincible", self.persist.get("cheat_invincible", False)))
+
+    def migrate_end_checkpoint_to_clear_record(self, save_data):
+        if not isinstance(save_data, dict):
+            return
+
+        records = save_data.setdefault("records", {})
+        if not isinstance(records, dict):
+            records = {}
+            save_data["records"] = records
+
+        level1_records = records.setdefault("level1", {})
+        if not isinstance(level1_records, dict):
+            level1_records = {}
+            records["level1"] = level1_records
+
+        source_updated_at_ms = save_data.get("updated_at_ms", None)
+        try:
+            source_updated_at_ms = int(source_updated_at_ms) if source_updated_at_ms is not None else None
+        except (TypeError, ValueError):
+            source_updated_at_ms = None
+
+        if source_updated_at_ms is not None and level1_records.get("last_clear_updated_at_ms") == source_updated_at_ms:
+            return
+
+        player = save_data.get("player", {})
+        progress = save_data.get("progress", {})
+        last_clear = {
+            "timestamp_ms": int(time.time() * 1000),
+            "score": int(player.get("score", 0)) if isinstance(player, dict) else 0,
+            "coin_total": int(player.get("coin_total", 0)) if isinstance(player, dict) else 0,
+            "lives": int(player.get("lives", 3)) if isinstance(player, dict) else 3,
+            "checkpoint": progress.get("checkpoint", None) if isinstance(progress, dict) else None,
+            "mario_x": progress.get("mario_x", None) if isinstance(progress, dict) else None,
+            "mario_y": progress.get("mario_y", None) if isinstance(progress, dict) else None,
+            "viewport_x": progress.get("viewport_x", None) if isinstance(progress, dict) else None,
+        }
+
+        try:
+            clears = int(level1_records.get("clears", 0))
+        except (TypeError, ValueError):
+            clears = 0
+
+        level1_records["clears"] = clears + 1
+        level1_records["last_clear"] = last_clear
+        if source_updated_at_ms is not None:
+            level1_records["last_clear_updated_at_ms"] = source_updated_at_ms
+
+    def record_level_clear_and_reset_save(self):
+        slot = self.persist.get("save_slot", None)
+        if not isinstance(slot, int):
+            return
+
+        existing = self.persist.get("save_data") if isinstance(self.persist.get("save_data"), dict) else None
+        data = self.save_manager.normalize(existing or {}, slot) or self.save_manager.create_new(slot)
+        if not isinstance(data, dict):
+            return
+
+        records = data.setdefault("records", {})
+        if not isinstance(records, dict):
+            records = {}
+            data["records"] = records
+
+        level1_records = records.setdefault("level1", {})
+        if not isinstance(level1_records, dict):
+            level1_records = {}
+            records["level1"] = level1_records
+
+        try:
+            clears = int(level1_records.get("clears", 0))
+        except (TypeError, ValueError):
+            clears = 0
+
+        level1_records["clears"] = clears + 1
+        level1_records["last_clear"] = {
+            "timestamp_ms": int(time.time() * 1000),
+            "score": int(self.game_info.get(c.SCORE, 0)),
+            "coin_total": int(self.game_info.get(c.COIN_TOTAL, 0)),
+            "lives": int(self.game_info.get(c.LIVES, 3)),
+        }
+
+        player = data.setdefault("player", {})
+        if isinstance(player, dict):
+            try:
+                previous_top = int(player.get("top_score", 0))
+            except (TypeError, ValueError):
+                previous_top = 0
+            try:
+                current_top = int(self.persist.get(c.TOP_SCORE, previous_top))
+            except (TypeError, ValueError):
+                current_top = previous_top
+            try:
+                current_score = int(self.game_info.get(c.SCORE, 0))
+            except (TypeError, ValueError):
+                current_score = 0
+
+            player["lives"] = 3
+            player["score"] = 0
+            player["coin_total"] = 0
+            player["top_score"] = max(previous_top, current_top, current_score)
+            player["big"] = False
+            player["fire"] = False
+
+        progress = data.setdefault("progress", {})
+        if isinstance(progress, dict):
+            progress["level"] = 1
+            progress["checkpoint"] = None
+            progress["mario_x"] = None
+            progress["mario_y"] = None
+            progress["viewport_x"] = 0
+
+        self.persist["save_data"] = data
+        self.save_manager.save(slot, data)
 
     def apply_mario_power_state(self, big, fire):
         bottom = self.mario.rect.bottom
@@ -1636,6 +1756,9 @@ class Level1(tools._State):
             self.flag_timer = self.current_time
         elif (self.current_time - self.flag_timer) > 2000:
             self.set_game_info_values()
+            if not self.clear_saved:
+                self.record_level_clear_and_reset_save()
+                self.clear_saved = True
             self.next = c.GAME_OVER
             self.sound_manager.stop_music()
             self.done = True

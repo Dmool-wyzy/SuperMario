@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "slot": 1,
+  "updated_at_ms": 1766890492881,
+  "player": {
+    "lives": 3,
+    "score": 0,
+    "coin_total": 0,
+    "top_score": 0,
+    "big": false,
+    "fire": false
+  },
+  "progress": {
+    "level": 1,
+    "checkpoint": "1",
+    "mario_x": 486,
+    "mario_y": 441,
+    "viewport_x": 120
+  },
+  "records": {},
+  "flags": {
+    "cheat_invincible": false
+  }
+}
