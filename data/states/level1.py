@@ -533,6 +533,48 @@ class Level1(tools._State):
         self.persist["save_data"] = data
         self.save_manager.save(slot, data)
 
+    def save_player_state(self):
+        slot = self.persist.get("save_slot", None)
+        if not isinstance(slot, int):
+            return
+
+        existing = self.persist.get("save_data") if isinstance(self.persist.get("save_data"), dict) else None
+        data = self.save_manager.normalize(existing or {}, slot) or self.save_manager.create_new(slot)
+        if not isinstance(data, dict):
+            return
+
+        player = data.setdefault("player", {})
+        if not isinstance(player, dict):
+            player = {}
+            data["player"] = player
+
+        try:
+            player["lives"] = int(self.persist.get(c.LIVES, 3))
+        except (TypeError, ValueError):
+            player["lives"] = 3
+        try:
+            player["score"] = int(self.persist.get(c.SCORE, 0))
+        except (TypeError, ValueError):
+            player["score"] = 0
+        try:
+            player["coin_total"] = int(self.persist.get(c.COIN_TOTAL, 0))
+        except (TypeError, ValueError):
+            player["coin_total"] = 0
+        try:
+            player["top_score"] = int(self.persist.get(c.TOP_SCORE, 0))
+        except (TypeError, ValueError):
+            player["top_score"] = 0
+
+        player["big"] = bool(getattr(self.mario, "big", False))
+        player["fire"] = bool(getattr(self.mario, "fire", False))
+
+        flags = data.setdefault("flags", {})
+        if isinstance(flags, dict):
+            flags["cheat_invincible"] = bool(self.persist.get("cheat_invincible", False))
+
+        self.persist["save_data"] = data
+        self.save_manager.save(slot, data)
+
     def build_save_payload(self, checkpoint_name=None):
         slot = self.persist.get("save_slot", 0)
         existing = self.persist.get("save_data") if isinstance(self.persist.get("save_data"), dict) else None
@@ -940,6 +982,7 @@ class Level1(tools._State):
 
                 self.game_info[c.LIVES] += 1
                 setup.SFX['one_up'].play()
+                self.save_player_state()
             elif powerup.name == c.FIREFLOWER:
                 setup.SFX['powerup'].play()
                 self.game_info[c.SCORE] += 1000
@@ -1691,6 +1734,7 @@ class Level1(tools._State):
             self.persist[c.TOP_SCORE] = self.game_info[c.SCORE]
         if self.mario.dead:
             self.persist[c.LIVES] -= 1
+            self.save_player_state()
 
         if self.persist[c.LIVES] == 0:
             self.next = c.GAME_OVER

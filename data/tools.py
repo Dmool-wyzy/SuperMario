@@ -4,7 +4,6 @@ import os
 import time
 import pygame as pg
 from .save_manager import SaveManager
-from .components.mario import Mario
 
 keybinding = {
     'action':pg.K_s,
@@ -176,7 +175,6 @@ def load_all_sfx(directory, accept=('.wav','.mpe','.ogg','.mdi')):
         if ext.lower() in accept:
             effects[name] = pg.mixer.Sound(os.path.join(directory, fx))
     return effects
-
 
 
 
